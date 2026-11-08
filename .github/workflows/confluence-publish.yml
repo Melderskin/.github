@@ -5,7 +5,7 @@
 #
 #   jobs:
 #     publish:
-#       uses: Melderskin/.github/.github/workflows/confluence-publish.yml@main
+#       uses: Melderskin/.github/.github/workflows/confluence-publish.yml@<commit-sha> # main yyyy-mm-dd
 #       with:
 #         files: "docs/**/*.md"
 #         space: PLATFORM
@@ -15,7 +15,10 @@
 #       secrets:
 #         token: ${{ secrets.CONFLUENCE_TOKEN }}
 #
-# Uses mark (github.com/kovetskiy/mark, Apache-2.0), pinned to one version, from its Docker image. The token is a scoped
+# Callers pin this workflow to a full commit SHA, not @main, so a change here cannot change what runs in their repo
+# without a pull request there; Dependabot (github-actions) keeps the pin fresh.
+#
+# Uses mark (github.com/kovetskiy/mark, Apache-2.0), pinned by digest, from its Docker image. The token is a scoped
 # Atlassian API token; the scopes are listed in project/27-jira-and-confluence.md in melderskin-hq. Without the
 # settings, the job only notes that it skipped. This repo is public: never put a secret or a value here, only inputs.
 name: Confluence publish
@@ -84,7 +87,7 @@ jobs:
             echo "::notice::Confluence is not set up for $REPO, so nothing was published (CONFLUENCE_BASE_URL, CONFLUENCE_USER and CONFLUENCE_TOKEN)."
           fi
 
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         if: steps.setup.outputs.ready == 'true'
 
       - name: The page header
@@ -103,4 +106,4 @@ jobs:
           if [ -n "$PARENTS" ]; then args+=(--parents "$PARENTS"); fi
           docker run --rm -v "$PWD:/w" -v "$RUNNER_TEMP:/hdr:ro" -w /w \
             -e MARK_BASE_URL -e MARK_SPACE -e MARK_USERNAME -e MARK_PASSWORD \
-            kovetskiy/mark:v17.0.0 mark publish "${args[@]}"
+            kovetskiy/mark:v17.0.0@sha256:7ff27d407b55f7a531c77aad8cb7c18a349d3e8e80f7f34526eee6276fae959e mark publish "${args[@]}"

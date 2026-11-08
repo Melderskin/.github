@@ -1,13 +1,1 @@
-* text=auto
-*.sh text eol=lf
-*.png binary
-*.jpg binary
-*.pdf binary
-*.eps binary
-*.sketch binary
-*.ai binary
-*.psd binary
-*.otf binary
-*.ttf binary
-*.woff binary
-*.woff2 binary
+* text=auto eol=lf

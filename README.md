@@ -1,9 +1,12 @@
 # Melderskin defaults
 
-The issue templates that every Melderskin repo uses, unless it has its own: **Task**, **Bug** and **Proposal**, in `.github/ISSUE_TEMPLATE/`.
+Shared files for every Melderskin repo:
 
-This repo is public because GitHub only reads default files from a public `.github` repo. It holds nothing but these templates. Never put code, plans, names of customers, secrets or anything internal here.
+- **Issue templates** (`.github/ISSUE_TEMPLATE/`): **Task**, **Bug** and **Proposal**. GitHub uses them in every repo that has none of its own.
+- **The Confluence publish workflow** (`.github/workflows/confluence-publish.yml`): copies a repo's Markdown to a Confluence space as a read-only copy. Each repo calls it from a small workflow of its own; the token and settings stay in the calling repo or the organisation, never here.
 
-How we use issues, the labels and the rules for agents: `project/26-start-here.md` in the hub (`Melderskin/melderskin-hq`, private). In the hub this repo is cloned as `org-github/`.
+This repo is public because GitHub only reads default files from a public `.github` repo, and a public reusable workflow can be called from the private repos. Never put code, plans, names of customers, secrets or anything internal here.
 
-To change a template, change it here in a pull request. A repo that adds its own `.github/ISSUE_TEMPLATE/` stops using these, so don't, unless it really needs different ones.
+How we use issues, the labels and the rules for agents: `project/26-start-here.md` in the hub (`Melderskin/melderskin-hq`, private). Jira and Confluence: `project/27-jira-and-confluence.md`. In the hub this repo is cloned as `org-github/`.
+
+To change a template or the workflow, change it here in a pull request. A repo that adds its own `.github/ISSUE_TEMPLATE/` stops using these templates, so don't, unless it really needs different ones.

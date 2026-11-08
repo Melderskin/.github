@@ -1,0 +1,106 @@
+# Publishes Markdown from the calling repo to a Confluence space as a read-only copy. Git stays the source of truth:
+# every page starts with a header that links to its file on GitHub and says that edits in Confluence are overwritten.
+#
+# Called from a small workflow in each repo, for example:
+#
+#   jobs:
+#     publish:
+#       uses: Melderskin/.github/.github/workflows/confluence-publish.yml@main
+#       with:
+#         files: "docs/**/*.md"
+#         space: PLATFORM
+#         parents-from-path: true
+#         base-url: ${{ vars.CONFLUENCE_BASE_URL }}
+#         user: ${{ vars.CONFLUENCE_USER }}
+#       secrets:
+#         token: ${{ secrets.CONFLUENCE_TOKEN }}
+#
+# Uses mark (github.com/kovetskiy/mark, Apache-2.0), pinned to one version, from its Docker image. The token is a scoped
+# Atlassian API token; the scopes are listed in project/27-jira-and-confluence.md in melderskin-hq. Without the
+# settings, the job only notes that it skipped. This repo is public: never put a secret or a value here, only inputs.
+name: Confluence publish
+
+on:
+  workflow_call:
+    inputs:
+      files:
+        description: "Files to publish, a glob relative to the repo root, e.g. docs/**/*.md"
+        required: true
+        type: string
+      space:
+        description: "The Confluence space key or alias, e.g. PLATFORM"
+        required: true
+        type: string
+      parents-from-path:
+        description: "Build the page tree from the folders (each README.md is its folder's page)"
+        required: false
+        type: boolean
+        default: false
+      parents:
+        description: "Optional parent pages for every page, separated by /"
+        required: false
+        type: string
+        default: ""
+      base-url:
+        description: "https://api.atlassian.com/ex/confluence/<cloud-id> (a scoped token only works there)"
+        required: false
+        type: string
+        default: ""
+      user:
+        description: "The email of the account that owns the token"
+        required: false
+        type: string
+        default: ""
+    secrets:
+      token:
+        description: "The scoped Confluence API token"
+        required: false
+
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    concurrency:
+      group: confluence-${{ inputs.space }}
+      cancel-in-progress: false
+    env:
+      MARK_BASE_URL: ${{ inputs.base-url }}
+      MARK_SPACE: ${{ inputs.space }}
+      MARK_USERNAME: ${{ inputs.user }}
+      MARK_PASSWORD: ${{ secrets.token }}
+      FILES: ${{ inputs.files }}
+      PARENTS: ${{ inputs.parents }}
+      FROM_PATH: ${{ inputs.parents-from-path }}
+      REPO: ${{ github.repository }}
+    steps:
+      - name: Is Confluence set up?
+        id: setup
+        run: |
+          if [ -n "$MARK_BASE_URL" ] && [ -n "$MARK_USERNAME" ] && [ -n "$MARK_PASSWORD" ]; then
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "::notice::Confluence is not set up for $REPO, so nothing was published (CONFLUENCE_BASE_URL, CONFLUENCE_USER and CONFLUENCE_TOKEN)."
+          fi
+
+      - uses: actions/checkout@v7
+        if: steps.setup.outputs.ready == 'true'
+
+      - name: The page header
+        if: steps.setup.outputs.ready == 'true'
+        run: |
+          # {{ .Path }} and {{ .EscapedPath }} are filled in by mark for each page.
+          printf '%s\n' "> **This page is a copy from git.** The source is \`{{ .Path }}\` in the $REPO repo ([open it on GitHub](https://github.com/$REPO/blob/main/{{ .EscapedPath }})). Change it there: edits made here are overwritten on the next publish." > "$RUNNER_TEMP/confluence-header.md"
+          cat "$RUNNER_TEMP/confluence-header.md"
+
+      - name: Publish to Confluence
+        if: steps.setup.outputs.ready == 'true'
+        run: |
+          args=(--files "$FILES" --title-from-h1 --drop-h1 --page-header /hdr/confluence-header.md --minor-edit
+                --version-message "Published from git ${GITHUB_SHA::7}" --output-format github)
+          if [ "$FROM_PATH" = "true" ]; then args+=(--parents-from-path); fi
+          if [ -n "$PARENTS" ]; then args+=(--parents "$PARENTS"); fi
+          docker run --rm -v "$PWD:/w" -v "$RUNNER_TEMP:/hdr:ro" -w /w \
+            -e MARK_BASE_URL -e MARK_SPACE -e MARK_USERNAME -e MARK_PASSWORD \
+            kovetskiy/mark:v17.0.0 mark publish "${args[@]}"

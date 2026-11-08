@@ -3,6 +3,7 @@
 Shared files for every Melderskin repo:
 
 - **Issue templates** (`.github/ISSUE_TEMPLATE/`): **Task**, **Bug** and **Proposal**. GitHub uses them in every repo that has none of its own.
+- **Claude Code locks** (`templates/claude/`): settings, a guard hook and a Stop hook to copy into every repo; see its README.
 - **The Confluence publish workflow** (`.github/workflows/confluence-publish.yml`): copies a repo's Markdown to a Confluence space as a read-only copy. Each repo calls it from a small workflow of its own; the token and settings stay in the calling repo or the organisation, never here.
 
 This repo is public because GitHub only reads default files from a public `.github` repo, and a public reusable workflow can be called from the private repos. Never put code, plans, names of customers, secrets or anything internal here.

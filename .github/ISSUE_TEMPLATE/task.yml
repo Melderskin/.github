@@ -1,0 +1,39 @@
+name: Task
+description: One piece of work that a single pull request in this repo finishes.
+title: "MEL-? "
+labels: []
+body:
+  - type: markdown
+    attributes:
+      value: |
+        A GitHub issue is the *how* in one repo; the *what and why* is in Jira (project MEL). Start the title with the Jira key if there is one, for example `MEL-12 Add list-tokens to the CLI`, or remove `MEL-?` for code-only work. Add the label **ready** only when the acceptance criteria are clear and a person has approved the task: agents only start on `ready` issues. See project/26-start-here.md in melderskin-hq.
+  - type: input
+    id: jira
+    attributes:
+      label: Jira item
+      description: The MEL key this belongs to, or "none" for code-only work.
+      placeholder: MEL-12
+    validations:
+      required: true
+  - type: textarea
+    id: what
+    attributes:
+      label: What and why
+      description: What should change, and why. Link the spec, ADR or decision if there is one.
+    validations:
+      required: true
+  - type: textarea
+    id: done
+    attributes:
+      label: Done when
+      description: Acceptance criteria someone can check, ideally as tests.
+      placeholder: |
+        - [ ] ...
+        - [ ] Tests cover ...
+    validations:
+      required: true
+  - type: textarea
+    id: notes
+    attributes:
+      label: Notes
+      description: Limits, risks, security, files involved. Never secrets.

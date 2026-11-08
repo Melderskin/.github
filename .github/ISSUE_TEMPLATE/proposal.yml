@@ -1,0 +1,38 @@
+name: Proposal
+description: Shape something before it is built. Agents and people use this to think in the open.
+title: "Proposal: "
+labels: ["shaping"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Shaping happens here, in the comments. When it is decided, write the decision in an ADR (code repos) or in project/09-decision-log.md (melderskin-hq), link it here, and close this issue. The work then becomes Task issues labelled **ready**.
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What is wrong or missing, and for whom.
+    validations:
+      required: true
+  - type: textarea
+    id: options
+    attributes:
+      label: Options
+      description: Two or more ways to solve it, with pros and cons. Mark what is checked and what is a guess.
+    validations:
+      required: true
+  - type: textarea
+    id: recommendation
+    attributes:
+      label: Recommendation
+      description: Which option, and why.
+  - type: textarea
+    id: questions
+    attributes:
+      label: Open questions
+      description: What a person must decide before this can be built.
+  - type: textarea
+    id: security
+    attributes:
+      label: Security
+      description: What could go wrong, and how the options handle it (ADR 0012 in oyonix-platform).

@@ -1,0 +1,5 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Company work (accounts, courses, channels, plans)
+    url: https://oyonix.atlassian.net/jira
+    about: Work that isn't code in one repo belongs in Jira, project MEL.

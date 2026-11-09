@@ -36,11 +36,11 @@ const kinds = {
     ]),
     ask: both(["dotnet ef *", "docker compose down -v*"]),
     deny: both(["dotnet user-secrets list*", "dotnet ef database drop*"]),
-    stop: "stop-dotnet.ps1",
+    stop: "stop-tests.ps1",
   },
   site: {
-    allow: both(["bash build.sh", "bash build.sh *", "bash serve.sh", "bash serve.sh *", "pwsh ./build.ps1", "pwsh ./build.ps1 *"]),
-    ask: both(["bash deploy.sh*"]),
+    allow: both(["bash build.sh", "bash build.sh *", "bash serve.sh", "bash serve.sh *", "pwsh ./build.ps1", "pwsh ./build.ps1 *", "pwsh ./serve.ps1", "pwsh ./serve.ps1 *", "./build.ps1", "./build.ps1 *", "./serve.ps1", "./serve.ps1 *"]),
+    ask: both(["bash deploy.sh*", "pwsh ./deploy.ps1*", "./deploy.ps1*"]),
     deny: [],
   },
   expo: {

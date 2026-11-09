@@ -55,7 +55,19 @@
       "Bash(pwsh ./build.ps1)",
       "PowerShell(pwsh ./build.ps1)",
       "Bash(pwsh ./build.ps1 *)",
-      "PowerShell(pwsh ./build.ps1 *)"
+      "PowerShell(pwsh ./build.ps1 *)",
+      "Bash(pwsh ./serve.ps1)",
+      "PowerShell(pwsh ./serve.ps1)",
+      "Bash(pwsh ./serve.ps1 *)",
+      "PowerShell(pwsh ./serve.ps1 *)",
+      "Bash(./build.ps1)",
+      "PowerShell(./build.ps1)",
+      "Bash(./build.ps1 *)",
+      "PowerShell(./build.ps1 *)",
+      "Bash(./serve.ps1)",
+      "PowerShell(./serve.ps1)",
+      "Bash(./serve.ps1 *)",
+      "PowerShell(./serve.ps1 *)"
     ],
     "ask": [
       "Bash(gh pr merge *)",
@@ -64,7 +76,11 @@
       "Edit(./.githooks/**)",
       "Edit(./.claude/**)",
       "Bash(bash deploy.sh*)",
-      "PowerShell(bash deploy.sh*)"
+      "PowerShell(bash deploy.sh*)",
+      "Bash(pwsh ./deploy.ps1*)",
+      "PowerShell(pwsh ./deploy.ps1*)",
+      "Bash(./deploy.ps1*)",
+      "PowerShell(./deploy.ps1*)"
     ],
     "deny": [
       "Read(**/.env)",

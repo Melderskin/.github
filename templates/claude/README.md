@@ -6,7 +6,7 @@ The same guard rails in every Melderskin repo (Jira MEL-108; the plan is track B
 |---|---|---|
 | `settings.<kind>.json` | `<repo>/.claude/settings.json` | Allow, ask and deny lists for the repo kind: `dotnet` (platform, LMS, CMS), `site` (the static sites), `expo` (Duo), `hub` (melderskin-hq) |
 | `hooks/guard.ps1` | `<repo>/.claude/hooks/guard.ps1` | Blocks what the lists can miss: secret files, secret environment variables, force pushes, pushes to `main`, skipping the gitleaks hook, `reset --hard`, GitHub secrets and settings calls, edits to existing migrations. Asks before merging. The hub sets `$AskFolders = @('private', 'archive')` at the top |
-| `hooks/stop-dotnet.ps1` | `<repo>/.claude/hooks/stop-tests.ps1` (.NET repos only) | The build and the tests must pass before an agent stops, when `src/` or `tests/` changed |
+| `hooks/stop-tests.ps1` | `<repo>/.claude/hooks/stop-tests.ps1` (.NET repos only) | The build and the tests must pass before an agent stops, when `src/` or `tests/` changed |
 | `hooks/guard.tests.ps1` | stays here | 27 cases: each rule blocks, and a look-alike passes |
 | `make-settings.js` | stays here | Writes the four settings files from one base: `node templates/claude/make-settings.js` |
 

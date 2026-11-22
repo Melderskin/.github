@@ -78,6 +78,11 @@ on:
         required: false
         type: string
         default: ""
+      timeout-minutes:
+        description: "Stop each job after this many minutes"
+        required: false
+        type: number
+        default: 30
       sibling-repository:
         description: "Optional owner/name of a second repo to check out next to this one (both in folders named after the repo)"
         required: false
@@ -98,6 +103,7 @@ jobs:
       matrix:
         os: ${{ fromJSON(inputs.os) }}
     runs-on: ${{ matrix.os }}
+    timeout-minutes: ${{ inputs.timeout-minutes }}
     permissions:
       contents: read
     services:
@@ -132,12 +138,17 @@ jobs:
               echo "::error::sibling-repository must be owner/name."
               exit 1
             fi
+            SIBLING_NAME="${SIBLING#*/}"
+            if [ "$SIBLING_NAME" = "." ] || [ "$SIBLING_NAME" = ".." ] || [ "$SIBLING_NAME" = "$SELF_NAME" ]; then
+              echo "::error::sibling-repository must name another repo, not . or .. or this repo's own name."
+              exit 1
+            fi
             if [ "$HAS_SIBLING_TOKEN" != "true" ]; then
               echo "::error::sibling-repository is set, but the secret sibling-token is missing, so nothing can be built or tested here."
               exit 1
             fi
             echo "self=$SELF_NAME" >> "$GITHUB_OUTPUT"
-            echo "sibling=${SIBLING#*/}" >> "$GITHUB_OUTPUT"
+            echo "sibling=$SIBLING_NAME" >> "$GITHUB_OUTPUT"
           fi
           if [ "$POSTGRES" = "true" ] && [ "$RUNNER_KIND" != "Linux" ]; then
             echo "::error::postgres needs a Linux runner (service containers only run there)."

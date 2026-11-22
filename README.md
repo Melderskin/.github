@@ -37,7 +37,9 @@ Callers pin each workflow to a full commit SHA, not `@main`, so a change here ca
 
 ### `secrets.yml`: gitleaks over the whole history
 
-For every kind. gitleaks (Docker image pinned by digest) over the full history (`fetch-depth: 0`), so a secret that was committed and removed is still found. A `.gitleaks.toml` in the caller's root is used if it is there. No inputs.
+For every kind. gitleaks (Docker image pinned by digest) over the full history (`fetch-depth: 0`), so a secret that was committed and removed is still found. No inputs.
+
+The caller's `.gitleaks.toml` and `.gitleaksignore` are read from the pull request's base branch (or the default branch on a push), never from the commit being checked, so a pull request cannot allow its own secret: a change to them takes effect once it is merged. Without them, gitleaks uses its default rules.
 
 ```yaml
 name: Secrets
@@ -68,9 +70,17 @@ For the `dotnet` kind. Restore, build with warnings as errors, test, and fail on
 | `vulnerable-packages` | `true` | Fail on a package with a known vulnerability |
 | `coverage` | `false` | Collect coverage and write a summary to the run's page (needs `reportgenerator` in the repo's tool manifest) |
 | `coverage-assembly-filters` | empty | `-assemblyfilters` for reportgenerator, e.g. `+MyApp.*;-MyApp.Tests` |
-| `sibling-repository` | empty | `owner/name` of a second repo to check out next to this one; both land in folders named after their repo |
+| `timeout-minutes` | `30` | Stop each job after this many minutes |
+| `sibling-repository` | empty | `owner/name` of a second repo to check out next to this one; both land in folders named after their repo, so it must be another repo's name |
 
-Secret: `sibling-token`, a fine-grained token with *Contents: read* on the sibling repo (only with `sibling-repository`; the job fails without it, so a green check means the tests ran).
+Secret: `sibling-token`, a fine-grained token with *Contents: read* on the sibling repo (only with `sibling-repository`; the job fails without it, so a green check means the tests ran). Pass it by name, never with `secrets: inherit`, which would hand every secret of the calling repo to this workflow:
+
+```yaml
+    with:
+      sibling-repository: <owner>/<repo>
+    secrets:
+      sibling-token: ${{ secrets.<READ_TOKEN> }}
+```
 
 ```yaml
 name: CI

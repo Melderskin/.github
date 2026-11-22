@@ -1,0 +1,216 @@
+# Builds and tests a .NET repo: restore, build with warnings as errors, test, and look for packages with known
+# vulnerabilities (also transitive ones). Optionally with a PostgreSQL service for the tests, a test coverage summary
+# on the run's page, and a second repo checked out next to the caller (for an app that is built together with a
+# private repo it depends on).
+#
+# Called from a small workflow in each repo, for example .github/workflows/ci.yml:
+#
+#   name: CI
+#   on:
+#     push:
+#       branches: [main]
+#     pull_request:
+#   permissions:
+#     contents: read
+#   jobs:
+#     dotnet:
+#       uses: Melderskin/.github/.github/workflows/dotnet-ci.yml@<commit-sha> # main yyyy-mm-dd
+#       with:
+#         dotnet-version: "10.0.x"
+#         postgres: true
+#         test-db-variable: MY_TEST_DB      # the tests read the connection string from this variable
+#
+# Callers pin this workflow to a full commit SHA, not @main, so a change here cannot change what runs in their repo
+# without a pull request there; Dependabot (github-actions) keeps the pin fresh. This repo is public: only inputs here,
+# never a value or a secret.
+name: .NET CI
+
+on:
+  workflow_call:
+    inputs:
+      dotnet-version:
+        description: "The .NET SDK for actions/setup-dotnet, e.g. 10.0.x"
+        required: false
+        type: string
+        default: "10.0.x"
+      os:
+        description: 'The runners as a JSON list, e.g. ["ubuntu-latest", "windows-latest"]. PostgreSQL needs Linux'
+        required: false
+        type: string
+        default: '["ubuntu-latest"]'
+      working-directory:
+        description: "Where to run dotnet, relative to the calling repo's root"
+        required: false
+        type: string
+        default: "."
+      configuration:
+        description: "The build configuration"
+        required: false
+        type: string
+        default: "Release"
+      postgres:
+        description: "Start a PostgreSQL service on localhost:5432 for the tests (Linux runners only)"
+        required: false
+        type: boolean
+        default: false
+      postgres-image:
+        description: "The PostgreSQL image for the service"
+        required: false
+        type: string
+        default: "postgres:16"
+      test-db-variable:
+        description: "With postgres: the environment variable that gets the connection string (Host=localhost;Username=postgres)"
+        required: false
+        type: string
+        default: ""
+      vulnerable-packages:
+        description: "Fail when a package has a known vulnerability (dotnet list package --vulnerable --include-transitive)"
+        required: false
+        type: boolean
+        default: true
+      coverage:
+        description: "Collect test coverage and write a summary to the run's page (needs reportgenerator in the repo's dotnet tool manifest)"
+        required: false
+        type: boolean
+        default: false
+      coverage-assembly-filters:
+        description: "With coverage: reportgenerator -assemblyfilters, e.g. +MyApp.*;-MyApp.Tests"
+        required: false
+        type: string
+        default: ""
+      sibling-repository:
+        description: "Optional owner/name of a second repo to check out next to this one (both in folders named after the repo)"
+        required: false
+        type: string
+        default: ""
+    secrets:
+      sibling-token:
+        description: "With sibling-repository: a fine-grained token with Contents: read on that repo"
+        required: false
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: ${{ fromJSON(inputs.os) }}
+    runs-on: ${{ matrix.os }}
+    permissions:
+      contents: read
+    services:
+      postgres:
+        # An empty image means no service is started.
+        image: ${{ inputs.postgres && inputs.postgres-image || '' }}
+        env:
+          POSTGRES_HOST_AUTH_METHOD: trust   # a throwaway database inside the runner, so no password in any file
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U postgres" --health-interval 2s --health-retries 30
+    env:
+      DOTNET_NOLOGO: "1"
+      DOTNET_CLI_TELEMETRY_OPTOUT: "1"
+      CONFIGURATION: ${{ inputs.configuration }}
+    steps:
+      - name: Check the inputs and choose the folders
+        id: paths
+        shell: bash
+        env:
+          SIBLING: ${{ inputs.sibling-repository }}
+          HAS_SIBLING_TOKEN: ${{ secrets.sibling-token != '' }}
+          SELF_NAME: ${{ github.event.repository.name }}
+          POSTGRES: ${{ inputs.postgres }}
+          TEST_DB_VARIABLE: ${{ inputs.test-db-variable }}
+          RUNNER_KIND: ${{ runner.os }}
+        run: |
+          if [ -z "$SIBLING" ]; then
+            echo "self=." >> "$GITHUB_OUTPUT"
+          else
+            if ! printf '%s' "$SIBLING" | grep -Eq '^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$'; then
+              echo "::error::sibling-repository must be owner/name."
+              exit 1
+            fi
+            if [ "$HAS_SIBLING_TOKEN" != "true" ]; then
+              echo "::error::sibling-repository is set, but the secret sibling-token is missing, so nothing can be built or tested here."
+              exit 1
+            fi
+            echo "self=$SELF_NAME" >> "$GITHUB_OUTPUT"
+            echo "sibling=${SIBLING#*/}" >> "$GITHUB_OUTPUT"
+          fi
+          if [ "$POSTGRES" = "true" ] && [ "$RUNNER_KIND" != "Linux" ]; then
+            echo "::error::postgres needs a Linux runner (service containers only run there)."
+            exit 1
+          fi
+          if [ -n "$TEST_DB_VARIABLE" ]; then
+            # Only a plain name, and never one that the runner or the shell relies on.
+            if ! printf '%s' "$TEST_DB_VARIABLE" | grep -Eq '^[A-Z][A-Z0-9_]*$' \
+               || printf '%s' "$TEST_DB_VARIABLE" | grep -Eq '^(GITHUB_|RUNNER_|ACTIONS_|DOTNET_|NODE_|LD_|PATH$|HOME$|SHELL$|BASH_ENV$|ENV$)'; then
+              echo "::error::test-db-variable must be an upper-case name like MY_TEST_DB, and not a runner or shell variable."
+              exit 1
+            fi
+            echo "$TEST_DB_VARIABLE=Host=localhost;Username=postgres" >> "$GITHUB_ENV"
+          fi
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          path: ${{ steps.paths.outputs.self }}
+          persist-credentials: false
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        if: inputs.sibling-repository != ''
+        with:
+          repository: ${{ inputs.sibling-repository }}
+          token: ${{ secrets.sibling-token }}
+          path: ${{ steps.paths.outputs.sibling }}
+          persist-credentials: false
+
+      - uses: actions/setup-dotnet@0f4a354dd5547a28c70b7853dbd95d5b67886e73 # v6.1.0
+        with:
+          dotnet-version: ${{ inputs.dotnet-version }}
+
+      - name: Restore
+        working-directory: ${{ steps.paths.outputs.self }}/${{ inputs.working-directory }}
+        shell: bash
+        run: dotnet restore
+
+      - name: Build (warnings are errors)
+        working-directory: ${{ steps.paths.outputs.self }}/${{ inputs.working-directory }}
+        shell: bash
+        run: dotnet build --no-restore -c "$CONFIGURATION" -p:TreatWarningsAsErrors=true
+
+      - name: Test
+        working-directory: ${{ steps.paths.outputs.self }}/${{ inputs.working-directory }}
+        shell: bash
+        env:
+          COVERAGE: ${{ inputs.coverage }}
+        run: |
+          args=(--no-build -c "$CONFIGURATION" --logger "console;verbosity=normal")
+          if [ "$COVERAGE" = "true" ]; then args+=(--collect:"XPlat Code Coverage" --results-directory coverage); fi
+          dotnet test "${args[@]}"
+
+      # The summary stays on the run's page inside GitHub; no external service. Report only: no minimum.
+      - name: Coverage report
+        if: always() && inputs.coverage
+        working-directory: ${{ steps.paths.outputs.self }}/${{ inputs.working-directory }}
+        shell: bash
+        env:
+          FILTERS: ${{ inputs.coverage-assembly-filters }}
+        run: |
+          dotnet tool restore
+          args=(-reports:"coverage/**/coverage.cobertura.xml" -targetdir:coverage/report -reporttypes:"MarkdownSummaryGithub")
+          if [ -n "$FILTERS" ]; then args+=(-assemblyfilters:"$FILTERS"); fi
+          dotnet reportgenerator "${args[@]}"
+          cat coverage/report/SummaryGithub.md >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Packages with known vulnerabilities, also transitive ones
+        if: inputs.vulnerable-packages
+        working-directory: ${{ steps.paths.outputs.self }}/${{ inputs.working-directory }}
+        shell: bash
+        run: |
+          dotnet list package --vulnerable --include-transitive | tee "$RUNNER_TEMP/vulnerable.txt"
+          if grep -q "has the following vulnerable packages" "$RUNNER_TEMP/vulnerable.txt"; then
+            echo "::error::A package has a known vulnerability. Update it, or explain in the pull request why it can wait."
+            exit 1
+          fi

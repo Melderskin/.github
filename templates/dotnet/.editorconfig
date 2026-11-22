@@ -1,0 +1,22 @@
+root = true
+
+[*]
+charset = utf-8
+end_of_line = lf
+insert_final_newline = true
+indent_style = space
+indent_size = 2
+
+[*.cs]
+indent_size = 4
+
+[*.ps1]
+indent_size = 4
+
+# ---- Code analysis ---------------------------------------------------------------------------------------------
+# Directory.Build.props turns on the .NET quality rules at "Recommended" and every security rule. With warnings as
+# errors, a finding stops the build. Turn a rule off below only on purpose, and say why on the line above it.
+
+[tests/**/*.cs]
+# Test names read as sentences: Anonymous_request_is_sent_to_sign_in.
+dotnet_diagnostic.CA1707.severity = none

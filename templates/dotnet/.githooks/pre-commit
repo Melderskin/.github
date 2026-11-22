@@ -1,0 +1,23 @@
+#!/bin/sh
+# Stops a commit that contains a secret, before it ever leaves this machine.
+# The free stand-in for GitHub's push protection. CI runs gitleaks again over the whole history (secrets.yml).
+# Turn it on once per clone:  git config core.hooksPath .githooks   (or: sh .githooks/install.sh)
+# Runs on macOS, Linux and Windows (git runs hooks with the sh that comes with Git for Windows).
+
+set -e
+# The same version as the shared secrets.yml workflow in Melderskin/.github, pinned by digest.
+GITLEAKS_IMAGE="ghcr.io/gitleaks/gitleaks:v8.28.0@sha256:cdbb7c955abce02001a9f6c9f602fb195b7fadc1e812065883f695d1eeaba854"
+
+if command -v gitleaks >/dev/null 2>&1; then
+  gitleaks git --pre-commit --staged --redact --no-banner --verbose .
+elif command -v docker >/dev/null 2>&1 || [ -x "$HOME/.rd/bin/docker" ]; then
+  DOCKER=$(command -v docker || echo "$HOME/.rd/bin/docker")
+  # On Windows, Docker needs the folder as E:/path, and Git Bash must not rewrite /repo into a Windows path.
+  REPO=$(pwd -W 2>/dev/null || pwd)
+  MSYS_NO_PATHCONV=1 "$DOCKER" run --rm -v "$REPO:/repo" "$GITLEAKS_IMAGE" git /repo --pre-commit --staged --redact --no-banner --verbose
+else
+  echo "pre-commit: gitleaks is needed to check for secrets. Install it, or Docker:" >&2
+  echo "pre-commit:   macOS: brew install gitleaks   Windows: winget install Gitleaks.Gitleaks   Linux: see .githooks/README.md" >&2
+  echo "pre-commit: the commit is stopped, so nothing is committed unchecked." >&2
+  exit 1
+fi

@@ -1,0 +1,40 @@
+# The files that every kind shares (git hooks, .gitattributes, LICENSE, CODEOWNERS) must stay the same in every
+# templates/<kind>/ folder, so a fix in one kind is not forgotten in the others.
+name: Templates check
+
+on:
+  pull_request:
+    paths: ["templates/**", ".github/workflows/templates-check.yml"]
+  push:
+    branches: [main]
+    paths: ["templates/**", ".github/workflows/templates-check.yml"]
+
+permissions:
+  contents: read
+
+jobs:
+  same:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Shared files are the same in every kind
+        run: |
+          status=0
+          for f in .gitattributes LICENSE .github/CODEOWNERS .githooks/pre-commit .githooks/install.sh .githooks/install.ps1 .githooks/README.md; do
+            for kind in site expo docs; do
+              if ! cmp -s "templates/dotnet/$f" "templates/$kind/$f"; then
+                echo "::error file=templates/$kind/$f::differs from templates/dotnet/$f"
+                status=1
+              fi
+            done
+          done
+          for kind in dotnet site expo docs; do
+            for f in CLAUDE.md .editorconfig; do
+              [ -f "templates/$kind/$f" ] || { echo "::error::templates/$kind/$f is missing"; status=1; }
+            done
+          done
+          exit $status

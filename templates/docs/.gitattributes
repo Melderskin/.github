@@ -1,0 +1,14 @@
+# The same files on Windows, macOS and Linux: text is stored and checked out with LF line endings (as .editorconfig
+# says), whatever core.autocrlf is set to. Shell scripts break with CRLF; PowerShell 7 reads LF scripts fine.
+* text=auto eol=lf
+
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.webp binary
+*.ico binary
+*.pdf binary
+*.mp4 binary
+*.woff binary
+*.woff2 binary

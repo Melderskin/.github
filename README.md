@@ -41,6 +41,8 @@ For every kind. gitleaks (Docker image pinned by digest) over the full history (
 
 The caller's `.gitleaks.toml` and `.gitleaksignore` are read from the pull request's base branch (or the default branch on a push), never from the commit being checked, so a pull request cannot allow its own secret: a change to them takes effect once it is merged. Without them, gitleaks uses its default rules.
 
+The job fails unless gitleaks really checked the history: an error line in its log, a missing report or 0 commits scanned all fail it, since gitleaks can log a git error and still exit 0.
+
 ```yaml
 name: Secrets
 on:

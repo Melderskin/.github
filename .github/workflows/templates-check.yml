@@ -39,3 +39,20 @@ jobs:
             done
           done
           exit $status
+      - name: The settings files are what make-settings.js writes
+        if: always()
+        run: |
+          node templates/claude/make-settings.js
+          if ! git diff --exit-code -- templates/claude; then
+            echo "::error::run node templates/claude/make-settings.js and commit the settings files"
+            exit 1
+          fi
+          if [ -n "$(git status --porcelain -- templates/claude)" ]; then
+            git status --porcelain -- templates/claude
+            echo "::error::make-settings.js writes a settings file that is not committed"
+            exit 1
+          fi
+      - name: The guard's tests pass
+        if: always()
+        shell: pwsh
+        run: pwsh -NoProfile -File templates/claude/hooks/guard.tests.ps1

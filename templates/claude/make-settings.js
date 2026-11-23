@@ -5,12 +5,18 @@ const path = require("path");
 
 const both = (list) => list.flatMap((c) => [`Bash(${c})`, `PowerShell(${c})`]);
 
+// The four commands every repo has (build, test, serve, check), as .sh and .ps1 scripts, with or without options.
+const fourCommands = ["build", "test", "serve", "check"].flatMap((c) => [
+  `bash ${c}.sh`, `bash ${c}.sh *`, `pwsh ./${c}.ps1`, `pwsh ./${c}.ps1 *`, `./${c}.ps1`, `./${c}.ps1 *`,
+]);
+
 const base = {
   allow: both([
     "git status", "git status *", "git diff", "git diff *", "git log", "git log *", "git show *",
     "git branch", "git branch *", "git fetch", "git fetch *", "git worktree list",
     "gh pr view *", "gh pr checks *", "gh pr list *", "gh pr diff *",
     "gh issue view *", "gh issue list *", "gh run list *", "gh run view *", "gh run watch *",
+    ...fourCommands,
   ]),
   ask: [
     ...both(["gh pr merge *"]),
@@ -38,18 +44,20 @@ const kinds = {
     deny: both(["dotnet user-secrets list*", "dotnet ef database drop*"]),
     stop: "stop-tests.ps1",
   },
-  site: {
-    allow: both(["bash build.sh", "bash build.sh *", "bash serve.sh", "bash serve.sh *", "pwsh ./build.ps1", "pwsh ./build.ps1 *", "pwsh ./serve.ps1", "pwsh ./serve.ps1 *", "./build.ps1", "./build.ps1 *", "./serve.ps1", "./serve.ps1 *"]),
-    ask: both(["bash deploy.sh*", "pwsh ./deploy.ps1*", "./deploy.ps1*"]),
-    deny: [],
-  },
+  // Sites deploy only from their workflows (test-site.yml, loopia.yml); there is no deploy script to allow.
+  site: { allow: [], ask: [], deny: [] },
   expo: {
     allow: both(["npm ci", "npm install", "npm test", "npm test *", "npm run *", "npx expo start*", "npx expo export*", "npx tsc *"]),
     ask: both(["npx expo publish*", "eas *", "npm publish*"]),
     deny: [],
   },
+  docs: { allow: [], ask: [], deny: [] },
   hub: {
-    allow: both(["bash status-all.sh*", "bash test-all.sh*", "bash clone-all.sh*"]),
+    // sync-templates is allowed only as a dry run: with -Pr it pushes branches and opens pull requests, so it asks.
+    allow: both([
+      "bash status-all.sh*", "pwsh ./status-all.ps1*", "bash test-all.sh*", "pwsh ./test-all.ps1*",
+      "bash clone-all.sh*", "bash sync-templates.sh", "pwsh ./sync-templates.ps1",
+    ]),
     ask: [],
     deny: [],
   },

@@ -29,7 +29,9 @@ Four kinds: `dotnet` (C# and .NET), `site` (static sites), `expo` (Expo and Reac
 | `.github/CODEOWNERS` | all, the same | `* @Melderskin/<team>`: put the owning team (not a person) in place of `<team>` |
 | `.claude/` | all | From `templates/claude/`: `settings.<kind>.json` and the hooks |
 
-The shared files must stay the same in every kind: the **Templates check** workflow (`.github/workflows/templates-check.yml`) fails a pull request where they differ. Change all four copies together.
+The shared files must stay the same in every kind: the **Templates check** workflow (`.github/workflows/templates-check.yml`) fails a pull request where they differ. Change all four copies together. The same workflow runs the guard's tests and checks that the settings files are what `make-settings.js` writes.
+
+The hub keeps the repos in step with these templates: its `sync-templates` script shows what differs in each repo and opens one pull request per repo, and `status-all` reports the drift.
 
 ## Reusable workflows
 

@@ -12,3 +12,11 @@
 *.mp4 binary
 *.woff binary
 *.woff2 binary
+*.ttf binary
+*.otf binary
+# Design files: some (EPS) look like text, so without this git would diff them and gitleaks would read them.
+*.eps binary
+*.ai binary
+*.psd binary
+*.sketch binary
+*.zip binary

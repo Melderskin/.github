@@ -1,0 +1,32 @@
+# site-check.yml carries copies of .github/site-check/package.json and package-lock.json, because a called workflow
+# cannot check out its own repo at its own commit. This fails a pull request where the copies differ from the files,
+# for example a Dependabot update: run node .github/site-check/embed.js and commit.
+name: Site check tools
+
+on:
+  pull_request:
+    paths: [".github/site-check/**", ".github/workflows/site-check.yml", ".github/workflows/site-check-tools.yml"]
+  push:
+    branches: [main]
+    paths: [".github/site-check/**", ".github/workflows/site-check.yml", ".github/workflows/site-check-tools.yml"]
+
+permissions:
+  contents: read
+
+jobs:
+  same:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: The copies in site-check.yml match .github/site-check/
+        run: node .github/site-check/embed.js --check
+      - name: The lockfile installs (integrity hashes, no install scripts)
+        working-directory: .github/site-check
+        run: |
+          npm ci --ignore-scripts --no-audit --no-fund --loglevel=error
+          npx --no-install html-validate --version

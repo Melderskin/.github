@@ -115,6 +115,8 @@ For the `site` kind. Four steps, each shown on its own on the run's page, with a
 
 Steps 2 to 4 run even when an earlier check fails, so one run shows every problem. Each check fails when it did nothing (no pages, no links, no report, no answer from the guard). No secrets.
 
+The build step runs the calling repo's own code, which can change what the later steps see. So this check is a quality gate for honest mistakes, not a security boundary against a hostile pull request.
+
 | Input | Default | What it does |
 |---|---|---|
 | `build-command` | `pwsh ./build.ps1` | The command that builds the site into `output-dir`, run with bash from the repo root |
@@ -122,7 +124,7 @@ Steps 2 to 4 run even when an earlier check fails, so one run shows every proble
 | `guard-script` | `site-build.ps1` | The PowerShell file that defines `Assert-ProductionReady` |
 | `timeout-minutes` | `15` | Stop the job after this many minutes |
 
-html-validate is installed with `--ignore-scripts` and `--before` a fixed date, so its dependencies are fixed too. Dependabot does not see that version: bump `HTML_VALIDATE_VERSION` and `NPM_BEFORE` in the workflow together.
+html-validate and everything it pulls in are fixed by `.github/site-check/package-lock.json` (exact versions and integrity hashes) and installed with `npm ci --ignore-scripts`. A called workflow cannot check out its own repo at its own commit, so `site-check.yml` carries copies of `package.json` and `package-lock.json`. The **Site check tools** workflow (`.github/workflows/site-check-tools.yml`) fails a pull request where the copies differ from the files. Dependabot (npm, with a 7-day cooldown) updates the files; in its pull request, run `node .github/site-check/embed.js` and commit, which updates the copies.
 
 ```yaml
 name: Build

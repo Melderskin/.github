@@ -9,9 +9,9 @@ Every command works on Windows, macOS and Linux. Where bash and PowerShell diffe
 | | Command | What it does |
 |---|---|---|
 | build | `bash build.sh` / `pwsh ./build.ps1` | Builds the site into `dist/` |
-| test | `<command>` | <What the tests check, for example links, HTML and accessibility> |
+| test | `bash test.sh` / `pwsh ./test.ps1` | Builds and checks every internal link in `dist/` (CI also checks the HTML, notes and placeholders) |
 | serve | `bash serve.sh` / `pwsh ./serve.ps1` | Serves `dist/` on <http://localhost:port> |
-| check | `<command>` | What CI runs before a pull request: build, test, secrets |
+| check | `bash check.sh` / `pwsh ./check.ps1` | What CI runs before a pull request: build, test, the guard's tests and gitleaks over the history. The same script in every repo |
 
 ## Rules
 

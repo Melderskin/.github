@@ -5,7 +5,7 @@ Shared files for every Melderskin repo:
 - **Issue templates** (`.github/ISSUE_TEMPLATE/`): **Task**, **Bug** and **Proposal**. GitHub uses them in every repo that has none of its own.
 - **Claude Code locks** (`templates/claude/`): settings, a guard hook and a Stop hook to copy into every repo; see its README.
 - **Repo templates per kind** (`templates/<kind>/`): the files a new repo starts from. See [Templates](#templates).
-- **Reusable workflows** (`.github/workflows/`): `secrets.yml`, `dotnet-ci.yml` and `confluence-publish.yml`. Each repo calls them from a small workflow of its own. See [Reusable workflows](#reusable-workflows).
+- **Reusable workflows** (`.github/workflows/`): `secrets.yml`, `dotnet-ci.yml`, `site-check.yml` and `confluence-publish.yml`. Each repo calls them from a small workflow of its own. See [Reusable workflows](#reusable-workflows).
 
 This repo is public because GitHub only reads default files from a public `.github` repo, and a public reusable workflow can be called from the private repos. Never put code, plans, names of customers, secrets or anything internal here.
 
@@ -104,6 +104,37 @@ jobs:
 
 Copies a repo's Markdown to a Confluence space as a read-only copy; the token and settings stay in the calling repo or the organisation, never here. The caller and its inputs are at the top of the workflow file.
 
-### Site check
+### `site-check.yml`: build, internal links, HTML, markers
 
-A shared check for the `site` kind is planned (tracked separately); it will be listed here when it lands.
+For the `site` kind. Four steps, each shown on its own on the run's page, with a summary of each:
+
+1. **Build:** runs the build command; fails if the output folder has no `.html` file, or was already in the repo before the build.
+2. **Internal links:** every local `href`, `src`, `srcset` and `poster` in the built pages (root-relative or relative) must point to a file in the output folder. Offline: links with a scheme (`https:`, `mailto:`) are not fetched, so a pull request cannot make the runner call arbitrary URLs.
+3. **HTML:** [html-validate](https://html-validate.org) at a fixed version, with rules for real errors only: unclosed or misnested tags, duplicate ids and attributes, a missing `alt` on images or `lang` on `<html>`, a missing doctype. The rules are in the workflow, so a config file in the site cannot loosen them.
+4. **Markers:** the site's own production guard (`Assert-ProductionReady` in its `site-build.ps1`) lists every note left for the author, `[PLACEHOLDER]` and other mark it would stop on, as a warning. They do not fail the check, since pages are still being filled in; the production build stops on them before publishing.
+
+Steps 2 to 4 run even when an earlier check fails, so one run shows every problem. Each check fails when it did nothing (no pages, no links, no report, no answer from the guard). No secrets.
+
+| Input | Default | What it does |
+|---|---|---|
+| `build-command` | `pwsh ./build.ps1` | The command that builds the site into `output-dir`, run with bash from the repo root |
+| `output-dir` | `dist` | The folder the build writes |
+| `guard-script` | `site-build.ps1` | The PowerShell file that defines `Assert-ProductionReady` |
+| `timeout-minutes` | `15` | Stop the job after this many minutes |
+
+html-validate is installed with `--ignore-scripts` and `--before` a fixed date, so its dependencies are fixed too. Dependabot does not see that version: bump `HTML_VALIDATE_VERSION` and `NPM_BEFORE` in the workflow together.
+
+```yaml
+name: Build
+on:
+  push:
+    branches: [main]
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  site:
+    uses: Melderskin/.github/.github/workflows/site-check.yml@<commit-sha> # main yyyy-mm-dd
+    with:
+      build-command: pwsh ./build.ps1 -Test
+```

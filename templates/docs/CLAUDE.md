@@ -8,10 +8,10 @@ Every command works on Windows, macOS and Linux. Where bash and PowerShell diffe
 
 | | Command | What it does |
 |---|---|---|
-| build | `<command>` | <Builds the docs, or "nothing to build: the Markdown is the source"> |
-| test | `<command>` | <What the tests check, for example links and headings> |
-| serve | `<command>` | <Previews the docs on http://localhost:port, or "read them on GitHub"> |
-| check | `<command>` | What CI runs before a pull request: test, secrets |
+| build | `bash build.sh` / `pwsh ./build.ps1` | Nothing to build: the Markdown is the source |
+| test | `bash test.sh` / `pwsh ./test.ps1` | <What the tests check, or "nothing to test"> |
+| serve | `bash serve.sh` / `pwsh ./serve.ps1` | Nothing to serve: read the Markdown on GitHub |
+| check | `bash check.sh` / `pwsh ./check.ps1` | What CI runs before a pull request: build, test, the guard's tests and gitleaks over the history. The same script in every repo |
 
 ## Rules
 

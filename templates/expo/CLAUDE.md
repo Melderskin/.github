@@ -8,10 +8,10 @@ Every command works on Windows, macOS and Linux. Run `npm ci` once first.
 
 | | Command | What it does |
 |---|---|---|
-| build | `npx expo export --platform web` | Builds the web version into `dist/` |
-| test | `npm test` | <What the tests cover> |
-| serve | `npx expo start` | Starts the dev server (press `w` for web, or scan the QR code with Expo Go) |
-| check | `npx tsc --noEmit && npm test` | What CI runs before a pull request: types, tests, secrets |
+| build | `npm run build` (or `bash build.sh` / `pwsh ./build.ps1`) | Builds the web version into `dist/` |
+| test | `npm test` (or `bash test.sh` / `pwsh ./test.ps1`) | <What the tests cover> |
+| serve | `npm run serve` (or `bash serve.sh` / `pwsh ./serve.ps1`) | Starts the dev server (press `w` for web, or scan the QR code with Expo Go) |
+| check | `bash check.sh` / `pwsh ./check.ps1` | What CI runs before a pull request: build, test, the guard's tests and gitleaks over the history. The same script in every repo |
 
 ## Rules
 

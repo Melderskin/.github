@@ -8,10 +8,10 @@ Every command works on Windows, macOS and Linux. Where bash and PowerShell diffe
 
 | | Command | What it does |
 |---|---|---|
-| build | `dotnet build -c Release` | Builds everything. Warnings are errors |
-| test | `dotnet test -c Release` | Runs the tests. <Say what they need, for example a database in an environment variable> |
-| serve | `dotnet run --project src/<App>` | Runs the app locally on <http://localhost:port> |
-| check | `<command>` | What CI runs: build, test, known vulnerable packages, secrets. Run it before a pull request |
+| build | `bash build.sh` / `pwsh ./build.ps1` | Builds everything. Warnings are errors |
+| test | `bash test.sh` / `pwsh ./test.ps1` | Runs the tests. <Say what they need, for example a database in an environment variable> |
+| serve | `bash serve.sh` / `pwsh ./serve.ps1` | Runs the app locally on <http://localhost:port> |
+| check | `bash check.sh` / `pwsh ./check.ps1` | What CI runs before a pull request: build, test, the guard's tests, known vulnerable packages and gitleaks over the history. The same script in every repo |
 
 ## Rules
 

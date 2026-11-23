@@ -27,9 +27,14 @@ Four kinds: `dotnet` (C# and .NET), `site` (static sites), `expo` (Expo and Reac
 | `.githooks/README.md` | all, the same | How to turn it on, install gitleaks per OS, and what to do when it stops a commit |
 | `LICENSE` | all, the same | **A placeholder.** No licence is chosen yet; replace the file when one is |
 | `.github/CODEOWNERS` | all, the same | `* @Melderskin/<team>`: put the owning team (not a person) in place of `<team>` |
+| `build.ps1`, `test.ps1`, `serve.ps1` | all, one per kind | The first three of the four commands. .NET: `dotnet build`, `dotnet test` and `dotnet run` (fill in the project); sites: a copy of `src/` (replace it with the site's build), an internal-link check of `dist/` and a local server; Expo: the npm scripts; docs: "nothing to do" |
+| `check.ps1` | all, the same | What CI runs, on your machine: build, test, the guard's tests, known vulnerable packages (.NET) and gitleaks over the history |
+| `build.sh`, `test.sh`, `serve.sh`, `check.sh` | all, the same | Run the `.ps1` of the same name from bash |
 | `.claude/` | all | From `templates/claude/`: `settings.<kind>.json` and the hooks |
 
-The shared files must stay the same in every kind: the **Templates check** workflow (`.github/workflows/templates-check.yml`) fails a pull request where they differ. Change all four copies together.
+The shared files must stay the same in every kind: the **Templates check** workflow (`.github/workflows/templates-check.yml`) fails a pull request where they differ. Change all four copies together. The same workflow runs the guard's tests and checks that the settings files are what `make-settings.js` writes.
+
+The hub keeps the repos in step with these templates: its `sync-templates` script shows what differs in each repo and opens one pull request per repo, and `status-all` reports the drift.
 
 ## Reusable workflows
 

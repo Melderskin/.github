@@ -256,9 +256,9 @@ function Test-LegacyRules([string]$c) {
   if ($c -match '\bgit\b.*\bpush\b.*(\s|:|/)(main|master)($|[\s''"`);&|])') { Block 'pushing to main: open a pull request instead' }
   if ($c -match '--no-verify') { Block '--no-verify would skip the gitleaks hook' }
   if ($c -match '\bgit\b.*\breset\s+--hard') { Block 'git reset --hard throws work away' }
-  if ($c -match '\bgh\s+(secret|repo|api|variable|auth)\b') { Block 'GitHub secrets, repo deletion and settings changes are for Kenneth' }
+  if ($c -match '\bgh\s+(secret|repo|api|variable|auth)\b') { Block 'GitHub secrets, repo deletion and settings changes are for a person, not an agent' }
   if ($c -match '(^|[;&|]\s*)(printenv|env|set)\s*($|[;&|])' -or $c -match '(?i)(Get-ChildItem|gci|dir|ls)\s+env:') { Block 'printing the environment can leak connection strings and tokens' }
-  if ($c -match '\bgh\s+pr\s+merge\b') { $script:askWhy = "Merging is Kenneth's decision" }
+  if ($c -match '\bgh\s+pr\s+merge\b') { $script:askWhy = "Merging is a person's decision" }
 }
 
 # --- Rules per command -----------------------------------------------------------------------------------------
@@ -383,7 +383,7 @@ function Test-Gh([string[]]$t, [int]$hi, $drop) {
   if (-not $a.Count) { return }
   $s0 = $a[0].ToLowerInvariant()
   $s1 = if ($a.Count -gt 1) { $a[1].ToLowerInvariant() } else { '' }
-  $why = 'GitHub secrets, repo deletion and settings changes are for Kenneth'
+  $why = 'GitHub secrets, repo deletion and settings changes are for a person, not an agent'
   if ($s0 -eq 'secret') { Block $why }
   if ($s0 -eq 'repo' -and $s1 -in 'delete', 'edit', 'archive', 'rename') { Block $why }
   if ($s0 -eq 'variable' -and $s1 -in 'set', 'delete') { Block $why }
@@ -410,7 +410,7 @@ function Test-Gh([string[]]$t, [int]$hi, $drop) {
     }
     elseif ($fields.Count -or $hasInput) { Block "$why (gh api with fields is a POST)" }
   }
-  if ($s0 -eq 'pr' -and $s1 -eq 'merge') { $script:askWhy = "Merging is Kenneth's decision" }
+  if ($s0 -eq 'pr' -and $s1 -eq 'merge') { $script:askWhy = "Merging is a person's decision" }
   if ($s0 -in 'pr', 'issue', 'release') {
     for ($j = 2; $j -lt $a.Count; $j++) {
       if ($a[$j] -cin '--title', '-t', '--body', '-b', '--notes', '-n') {

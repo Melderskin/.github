@@ -1,0 +1,8 @@
+{
+  "name": "site-check-tools",
+  "private": true,
+  "description": "The pinned tools for .github/workflows/site-check.yml",
+  "dependencies": {
+    "html-validate": "11.20.1"
+  }
+}

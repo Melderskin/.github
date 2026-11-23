@@ -8,3 +8,14 @@ updates:
     groups:
       github-actions-all:
         patterns: ["*"]
+  # html-validate for site-check.yml. After an update, run node .github/site-check/embed.js in the pull request
+  # (the Site check tools workflow fails until the copies in site-check.yml match).
+  - package-ecosystem: npm
+    directory: /.github/site-check
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7
+    groups:
+      site-check-tools:
+        patterns: ["*"]

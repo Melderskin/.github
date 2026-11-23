@@ -1,0 +1,545 @@
+# Checks a static site on every change: it builds, every internal link resolves, the HTML has no real errors, and
+# the notes and placeholders still to fill in are listed. Needs no secrets and makes no network calls to the site's
+# links, so a pull request cannot make the runner fetch arbitrary URLs.
+#
+# Steps, each shown on its own on the run's page:
+#   1. Build: runs the build command; fails if the output folder has no .html file.
+#   2. Internal links: every local href, src, srcset and poster in the output's .html files (root-relative or
+#      relative) resolves to a file in the output folder. Links with a scheme (https:, mailto:, ...) are not fetched.
+#   3. HTML: html-validate (pinned version) with rules for real errors only: unclosed or misnested tags, duplicate
+#      ids and attributes, a missing alt on images or lang on <html>, a missing doctype. The rules live here, so a
+#      pull request cannot loosen them with a config file of its own.
+#   4. Markers: the site's own production guard (Assert-ProductionReady in its site-build.ps1) lists every note left
+#      for the author, [PLACEHOLDER] and other mark it stops on, as a warning on the run's page. They do not fail
+#      this check: pages are still being filled in on a test build, and the production build stops on them before
+#      anything is published.
+# Steps 2 to 4 run even when an earlier check fails, so one run shows every problem.
+#
+# The build step runs the caller's own code, which can change what the later steps see: this check is a quality gate
+# for honest mistakes, not a security boundary against a hostile pull request.
+#
+# html-validate and everything it pulls in are fixed by .github/site-check/package-lock.json (integrity hashes) and
+# installed with npm ci --ignore-scripts. A called workflow cannot check out its own repo at its own commit, so the
+# HTML step writes copies of package.json and package-lock.json that are kept in this file; the Site check tools
+# workflow fails when they differ from the files in .github/site-check/ (node .github/site-check/embed.js updates
+# them). Dependabot (npm) keeps those files current.
+#
+# Called from a small workflow in each site, for example .github/workflows/build.yml:
+#
+#   name: Build
+#   on:
+#     push:
+#       branches: [main]
+#     pull_request:
+#   permissions:
+#     contents: read
+#   jobs:
+#     site:
+#       uses: Melderskin/.github/.github/workflows/site-check.yml@<commit-sha> # main yyyy-mm-dd
+#       with:
+#         build-command: pwsh ./build.ps1 -Test
+#
+# Callers pin this workflow to a full commit SHA, not @main, so a change here cannot change what runs in their repo
+# without a pull request there; Dependabot (github-actions) keeps the pin fresh. This repo is public: only inputs here,
+# never a value or a secret.
+name: Site check
+
+on:
+  workflow_call:
+    inputs:
+      build-command:
+        description: "The command that builds the site into output-dir, run with bash from the repo root"
+        required: false
+        type: string
+        default: "pwsh ./build.ps1"
+      output-dir:
+        description: "The folder the build writes, relative to the repo root"
+        required: false
+        type: string
+        default: "dist"
+      guard-script:
+        description: "The PowerShell file, relative to the repo root, that defines Assert-ProductionReady"
+        required: false
+        type: string
+        default: "site-build.ps1"
+      timeout-minutes:
+        description: "Stop the job after this many minutes"
+        required: false
+        type: number
+        default: 15
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: ${{ inputs.timeout-minutes }}
+    permissions:
+      contents: read
+    env:
+      OUTPUT_DIR: ${{ inputs.output-dir }}
+      GUARD_SCRIPT: ${{ inputs.guard-script }}
+    steps:
+      - name: Check the inputs
+        shell: bash
+        run: |
+          # Only a plain relative path inside the repo: no absolute path, no .., nothing the shell would read.
+          for name in OUTPUT_DIR GUARD_SCRIPT; do
+            value="${!name}"
+            if ! printf '%s' "$value" | grep -Eq '^[A-Za-z0-9_][A-Za-z0-9_./-]*$' || printf '%s' "$value" | grep -Eq '(^|/)\.\.(/|$)'; then
+              echo "::error::$name must be a relative path inside the repo, such as dist or site-build.ps1 (got '$value')."
+              exit 1
+            fi
+          done
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: "24"
+
+      - name: Build
+        id: build
+        shell: bash
+        env:
+          BUILD_COMMAND: ${{ inputs.build-command }}
+        run: |
+          if [ -e "$OUTPUT_DIR" ]; then
+            echo "::error::$OUTPUT_DIR is in the repo before the build, so the check could pass on old pages. Remove it from git."
+            exit 1
+          fi
+          echo "Build: $BUILD_COMMAND"
+          eval "$BUILD_COMMAND"
+          if [ ! -d "$OUTPUT_DIR" ]; then
+            echo "::error::The build wrote no $OUTPUT_DIR folder."
+            exit 1
+          fi
+          pages=$(find "$OUTPUT_DIR" -type f -name '*.html' | wc -l)
+          if [ "$pages" -eq 0 ]; then
+            echo "::error::The build wrote no .html file to $OUTPUT_DIR."
+            exit 1
+          fi
+          echo "The build wrote $pages pages to $OUTPUT_DIR."
+          printf '### Build\n\n%s pages in %s.\n\n' "$pages" "$OUTPUT_DIR" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Internal links
+        if: ${{ !cancelled() && steps.build.outcome == 'success' }}
+        shell: bash
+        run: |
+          node - <<'JS'
+          const fs = require('fs');
+          const path = require('path');
+          const dist = path.resolve(process.env.OUTPUT_DIR);
+          const pages = [];
+          (function walk(dir) {
+            for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
+              const p = path.join(dir, e.name);
+              if (e.isDirectory()) walk(p);
+              else if (e.isFile() && e.name.endsWith('.html')) pages.push(p);
+            }
+          })(dist);
+          const rel = (p) => path.relative(process.cwd(), p).split(path.sep).join('/');
+          const entities = { amp: '&', quot: '"', apos: "'", '#39': "'", lt: '<', gt: '>' };
+          const decode = (s) => s.replace(/&(amp|quot|apos|#39|lt|gt);/g, (m, n) => entities[n]);
+          const exists = (p) => {
+            try {
+              const st = fs.statSync(p);
+              if (st.isFile()) return true;
+              if (st.isDirectory()) return ['index.html', 'index.php'].some((i) => fs.existsSync(path.join(p, i)));
+            } catch { /* missing */ }
+            return false;
+          };
+          let links = 0;
+          const broken = [];
+          for (const page of pages) {
+            // Comments and the contents of scripts and styles are not links: blank them, keeping the line numbers.
+            const html = fs.readFileSync(page, 'utf8').replace(
+              /<!--[\s\S]*?-->|(<(script|style)\b[^>]*>)[\s\S]*?(?=<\/\2\s*>)/gi,
+              (m, open) => (open || '') + m.slice((open || '').length).replace(/[^\n]/g, ''));
+            const tag = /<[a-zA-Z][\w-]*\b([^>]*)>/g;
+            let t;
+            while ((t = tag.exec(html))) {
+              const attr = /(?:^|\s)(href|src|srcset|poster)\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'>]+))/gi;
+              let a;
+              while ((a = attr.exec(t[1]))) {
+                const raw = decode(a[2] ?? a[3] ?? a[4] ?? '');
+                const values = a[1].toLowerCase() === 'srcset'
+                  ? raw.split(',').map((s) => s.trim().split(/\s+/)[0]) : [raw.trim()];
+                for (const v of values) {
+                  if (!v || v.startsWith('#') || v.startsWith('//') || /^[a-z][a-z0-9+.-]*:/i.test(v)) continue;
+                  links++;
+                  let target = v.replace(/[?#].*$/, '');
+                  try { target = decodeURIComponent(target); } catch { /* keep it as written */ }
+                  const file = target.startsWith('/') ? path.join(dist, target) : path.resolve(path.dirname(page), target);
+                  const line = html.slice(0, t.index).split('\n').length;
+                  if (file !== dist && !file.startsWith(dist + path.sep)) broken.push({ page, line, v, why: 'points outside the output folder' });
+                  else if (!exists(file)) broken.push({ page, line, v, why: 'no such file' });
+                }
+              }
+            }
+          }
+          // Workflow commands: escape the message, and also : and , in a property such as file=.
+          const clean = (s) => String(s).replace(/%/g, '%25').replace(/\r/g, '%0D').replace(/\n/g, '%0A');
+          const prop = (s) => clean(s).replace(/:/g, '%3A').replace(/,/g, '%2C');
+          const say = (s) => fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY, s + '\n');
+          say(`### Internal links\n\n${links} local links on ${pages.length} pages, ${broken.length} broken.\n`);
+          for (const b of broken) {
+            console.log(`::error file=${prop(rel(b.page))},line=${b.line}::Broken internal link ${clean(b.v)} (${b.why})`);
+            say(`- \`${rel(b.page)}:${b.line}\`: \`${b.v.replace(/[`\r\n]/g, "'")}\` (${b.why})`);
+          }
+          if (pages.length === 0) { console.log('::error::No pages were checked, so the links were not checked.'); process.exit(1); }
+          if (links === 0) { console.log(`::error::${pages.length} pages but not one local link, so the check did nothing. Is output-dir right?`); process.exit(1); }
+          if (broken.length) { console.log(`::error::${broken.length} broken internal links (above).`); process.exit(1); }
+          console.log(`Internal links: ${links} local links on ${pages.length} pages, all resolve.`);
+          JS
+
+      - name: HTML
+        if: ${{ !cancelled() && steps.build.outcome == 'success' }}
+        shell: bash
+        run: |
+          tool="$RUNNER_TEMP/html-validate"
+          mkdir -p "$tool"
+          # Copies of .github/site-check/package.json and package-lock.json (see the top of this file).
+          cat > "$tool/package.json" <<'PACKAGE_JSON'
+          {
+            "name": "site-check-tools",
+            "private": true,
+            "description": "The pinned tools for .github/workflows/site-check.yml",
+            "dependencies": {
+              "html-validate": "11.20.1"
+            }
+          }
+          PACKAGE_JSON
+          cat > "$tool/package-lock.json" <<'PACKAGE_LOCK'
+          {
+            "name": "site-check-tools",
+            "lockfileVersion": 3,
+            "requires": true,
+            "packages": {
+              "": {
+                "name": "site-check-tools",
+                "dependencies": {
+                  "html-validate": "11.20.1"
+                }
+              },
+              "node_modules/@html-validate/stylish": {
+                "version": "6.1.0",
+                "resolved": "https://registry.npmjs.org/@html-validate/stylish/-/stylish-6.1.0.tgz",
+                "integrity": "sha512-ceNvF6/5hgvw/OrxXtdl2KurRVLN/Q/OkD/qminRRY/IIERmVaqJOpDF1nhRZMrOG/vyKKW0+Nxw6lSoHUP4Ow==",
+                "license": "MIT",
+                "engines": {
+                  "node": "^22.16.0 || >= 24.0.0"
+                }
+              },
+              "node_modules/@sidvind/better-ajv-errors": {
+                "version": "7.0.0",
+                "resolved": "https://registry.npmjs.org/@sidvind/better-ajv-errors/-/better-ajv-errors-7.0.0.tgz",
+                "integrity": "sha512-imVsp5D3KxJ8+uUmu2dsLKnFg3qdX952v/L1gZoCa0NO2ivhQWHMpYM2KmpFrRXHWFjlqkNZ/935nxiTqXEi1A==",
+                "license": "Apache-2.0",
+                "engines": {
+                  "node": "^22.12 || >= 24.0"
+                },
+                "peerDependencies": {
+                  "ajv": "^8.0.0"
+                }
+              },
+              "node_modules/ajv": {
+                "version": "8.20.0",
+                "resolved": "https://registry.npmjs.org/ajv/-/ajv-8.20.0.tgz",
+                "integrity": "sha512-Thbli+OlOj+iMPYFBVBfJ3OmCAnaSyNn4M1vz9T6Gka5Jt9ba/HIR56joy65tY6kx/FCF5VXNB819Y7/GUrBGA==",
+                "license": "MIT",
+                "dependencies": {
+                  "fast-deep-equal": "^3.1.3",
+                  "fast-uri": "^3.0.1",
+                  "json-schema-traverse": "^1.0.0",
+                  "require-from-string": "^2.0.2"
+                },
+                "funding": {
+                  "type": "github",
+                  "url": "https://github.com/sponsors/epoberezkin"
+                }
+              },
+              "node_modules/fast-deep-equal": {
+                "version": "3.1.3",
+                "resolved": "https://registry.npmjs.org/fast-deep-equal/-/fast-deep-equal-3.1.3.tgz",
+                "integrity": "sha512-f3qQ9oQy9j2AhBe/H9VC91wLmKBCCU/gDOnKNAYG5hswO7BLKj09Hc5HYNz9cGI++xlpDCIgDaitVs03ATR84Q==",
+                "license": "MIT"
+              },
+              "node_modules/fast-uri": {
+                "version": "3.1.9",
+                "resolved": "https://registry.npmjs.org/fast-uri/-/fast-uri-3.1.9.tgz",
+                "integrity": "sha512-hS/0Wt3Ya043oKXs0sIxrMpKQITXhMLIrVAKKXi4gozGC9v7YRWVnXIZzjNPTO02M9BdxLCWqK1yRXgNziVyJQ==",
+                "funding": [
+                  {
+                    "type": "github",
+                    "url": "https://github.com/sponsors/fastify"
+                  },
+                  {
+                    "type": "opencollective",
+                    "url": "https://opencollective.com/fastify"
+                  }
+                ],
+                "license": "BSD-3-Clause"
+              },
+              "node_modules/html-validate": {
+                "version": "11.20.1",
+                "resolved": "https://registry.npmjs.org/html-validate/-/html-validate-11.20.1.tgz",
+                "integrity": "sha512-SwlyQ0qK6EOMUEemI+eKijid8W3HTKN0kHZn5UUu1Ohc8pjVVjMV2vWI+iid9QQ62Vxe9U3Nzc6xcqzS5szZLw==",
+                "funding": [
+                  {
+                    "type": "github",
+                    "url": "https://github.com/sponsors/html-validate"
+                  }
+                ],
+                "license": "MIT",
+                "dependencies": {
+                  "@html-validate/stylish": "^6.0.0",
+                  "@sidvind/better-ajv-errors": "7.0.0",
+                  "ajv": "^8.0.0",
+                  "kleur": "^4.1.0",
+                  "prompts": "^2.0.0",
+                  "semver": "^7.0.0"
+                },
+                "bin": {
+                  "html-validate": "bin/html-validate.mjs"
+                },
+                "engines": {
+                  "node": "^22.22.0 || >= 24.8.0"
+                },
+                "peerDependencies": {
+                  "@jest/globals": "^29.0.3 || ^30.0.0",
+                  "@vitest/expect": "^3.2.0 || ^4.0.1 || ^5.0.0",
+                  "jest": "^29.0.3 || ^30.0.0",
+                  "jest-snapshot": "^29.0.3 || ^30.0.0",
+                  "vitest": "^3.2.0 || ^4.0.1 || ^5.0.0"
+                },
+                "peerDependenciesMeta": {
+                  "@jest/globals": {
+                    "optional": true
+                  },
+                  "@vitest/expect": {
+                    "optional": true
+                  },
+                  "jest": {
+                    "optional": true
+                  },
+                  "jest-snapshot": {
+                    "optional": true
+                  },
+                  "vitest": {
+                    "optional": true
+                  }
+                }
+              },
+              "node_modules/json-schema-traverse": {
+                "version": "1.0.0",
+                "resolved": "https://registry.npmjs.org/json-schema-traverse/-/json-schema-traverse-1.0.0.tgz",
+                "integrity": "sha512-NM8/P9n3XjXhIZn1lLhkFaACTOURQXjWhV4BA/RnOv8xvgqtqpAX9IO4mRQxSx1Rlo4tqzeqb0sOlruaOy3dug==",
+                "license": "MIT"
+              },
+              "node_modules/kleur": {
+                "version": "4.1.5",
+                "resolved": "https://registry.npmjs.org/kleur/-/kleur-4.1.5.tgz",
+                "integrity": "sha512-o+NO+8WrRiQEE4/7nwRJhN1HWpVmJm511pBHUxPLtp0BUISzlBplORYSmTclCnJvQq2tKu/sgl3xVpkc7ZWuQQ==",
+                "license": "MIT",
+                "engines": {
+                  "node": ">=6"
+                }
+              },
+              "node_modules/prompts": {
+                "version": "2.4.2",
+                "resolved": "https://registry.npmjs.org/prompts/-/prompts-2.4.2.tgz",
+                "integrity": "sha512-NxNv/kLguCA7p3jE8oL2aEBsrJWgAakBpgmgK6lpPWV+WuOmY6r2/zbAVnP+T8bQlA0nzHXSJSJW0Hq7ylaD2Q==",
+                "license": "MIT",
+                "dependencies": {
+                  "kleur": "^3.0.3",
+                  "sisteransi": "^1.0.5"
+                },
+                "engines": {
+                  "node": ">= 6"
+                }
+              },
+              "node_modules/prompts/node_modules/kleur": {
+                "version": "3.0.3",
+                "resolved": "https://registry.npmjs.org/kleur/-/kleur-3.0.3.tgz",
+                "integrity": "sha512-eTIzlVOSUR+JxdDFepEYcBMtZ9Qqdef+rnzWdRZuMbOywu5tO2w2N7rqjoANZ5k9vywhL6Br1VRjUIgTQx4E8w==",
+                "license": "MIT",
+                "engines": {
+                  "node": ">=6"
+                }
+              },
+              "node_modules/require-from-string": {
+                "version": "2.0.2",
+                "resolved": "https://registry.npmjs.org/require-from-string/-/require-from-string-2.0.2.tgz",
+                "integrity": "sha512-Xf0nWe6RseziFMu+Ap9biiUbmplq6S9/p+7w7YXP/JBHhrUDDUhwa+vANyubuqfZWTveU//DYVGsDG7RKL/vEw==",
+                "license": "MIT",
+                "engines": {
+                  "node": ">=0.10.0"
+                }
+              },
+              "node_modules/semver": {
+                "version": "7.8.6",
+                "resolved": "https://registry.npmjs.org/semver/-/semver-7.8.6.tgz",
+                "integrity": "sha512-9lpSSU4Mly3mrtruwLs1eLK6+gzbzqeBFwRNjIjE+9LuDpWdYctrQlQ3ej1Ilgi7gknpsTRnPoLP8DpCHqHIJw==",
+                "license": "ISC",
+                "bin": {
+                  "semver": "bin/semver.js"
+                },
+                "engines": {
+                  "node": ">=10"
+                }
+              },
+              "node_modules/sisteransi": {
+                "version": "1.0.5",
+                "resolved": "https://registry.npmjs.org/sisteransi/-/sisteransi-1.0.5.tgz",
+                "integrity": "sha512-bLGGlR1QxBcynn2d5YmDX4MGjlZvy2MRBDRNHLJ8VI6l6+9FUiyTFNJ0IveOSP0bcXgVDPRcfGqA0pjaqUpfVg==",
+                "license": "MIT"
+              }
+            }
+          }
+          PACKAGE_LOCK
+          # The exact versions and integrity hashes from the lockfile; no install scripts run.
+          npm ci --prefix "$tool" --ignore-scripts --no-audit --no-fund --loglevel=error
+          # Real errors only, not style. root: true, so a config file in the site is never read.
+          cat > "$tool/rules.json" <<'EOF'
+          {
+            "root": true,
+            "extends": [],
+            "rules": {
+              "close-order": "error",
+              "close-attr": "error",
+              "no-dup-id": "error",
+              "no-dup-attr": "error",
+              "attr-delimiter": "error",
+              "unrecognized-char-ref": "error",
+              "void-content": "error",
+              "element-required-attributes": "error",
+              "wcag/h37": "error",
+              "doctype-html": "error"
+            }
+          }
+          EOF
+          pages=$(find "$OUTPUT_DIR" -type f -name '*.html' | wc -l)
+          set +e
+          "$tool/node_modules/.bin/html-validate" --config "$tool/rules.json" --ext html \
+            --formatter "text,json=$tool/report.json" "$OUTPUT_DIR"
+          status=$?
+          set -e
+          if [ "$status" -gt 1 ] || [ ! -f "$tool/report.json" ]; then
+            echo "::error::html-validate stopped (exit code $status) without a report, so the HTML was not checked."
+            exit 1
+          fi
+          REPORT="$tool/report.json" PAGES="$pages" node - <<'JS'
+          const fs = require('fs');
+          const report = JSON.parse(fs.readFileSync(process.env.REPORT, 'utf8'));
+          const clean = (s) => String(s).replace(/%/g, '%25').replace(/\r/g, '%0D').replace(/\n/g, '%0A');
+          const prop = (s) => clean(s).replace(/:/g, '%3A').replace(/,/g, '%2C');
+          const rel = (p) => require('path').relative(process.cwd(), p).split(require('path').sep).join('/');
+          let errors = 0;
+          const lines = [];
+          for (const file of report) {
+            for (const m of file.messages) {
+              errors++;
+              if (errors <= 50) console.log(`::error file=${prop(rel(file.filePath))},line=${m.line},col=${m.column}::${clean(m.message)} (${m.ruleId})`);
+              if (lines.length < 100) lines.push(`- \`${rel(file.filePath)}:${m.line}\`: ${m.message.replace(/[`\r\n]/g, "'")} (${m.ruleId})`);
+            }
+          }
+          const say = (s) => fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY, s + '\n');
+          say(`### HTML\n\n${process.env.PAGES} pages checked, ${errors} errors on ${report.length} pages.\n`);
+          if (lines.length) say(lines.join('\n') + (errors > lines.length ? `\n- ... and ${errors - lines.length} more` : '') + '\n');
+          JS
+          if [ "$pages" -eq 0 ]; then
+            echo "::error::No pages were checked."
+            exit 1
+          fi
+          if [ "$status" -ne 0 ]; then
+            echo "::error::The HTML has errors (above)."
+            exit 1
+          fi
+          echo "HTML: $pages pages, no errors."
+
+      - name: Markers (notes and placeholders)
+        if: ${{ !cancelled() && steps.build.outcome == 'success' }}
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          if (-not (Test-Path $env:GUARD_SCRIPT -PathType Leaf)) {
+            Write-Output "::error::$($env:GUARD_SCRIPT) is missing, so the markers were not checked. It holds the site's production guard."
+            exit 1
+          }
+          . (Join-Path $PWD $env:GUARD_SCRIPT)
+          if (-not (Get-Command Assert-ProductionReady -CommandType Function -ErrorAction SilentlyContinue)) {
+            Write-Output "::error::$($env:GUARD_SCRIPT) defines no Assert-ProductionReady, so the markers were not checked."
+            exit 1
+          }
+          # The same guard the production build runs; here what it finds is listed as warnings, not a failure.
+          function Invoke-Guard([string]$Dir) {
+            $out = [Collections.Generic.List[string]]::new()
+            $stopped = $null
+            try { Assert-ProductionReady $Dir -Include '*.html', '*.php' 6>&1 | ForEach-Object { $out.Add([string]$_) } }
+            catch { $stopped = $_.Exception.Message }
+            [pscustomobject]@{ Out = $out; Stopped = $stopped }
+          }
+          $clean = { param($s) ([string]$s).Replace('%', '%25').Replace("`r", '%0D').Replace("`n", '%0A') }
+          $prop = { param($s) (& $clean $s).Replace(':', '%3A').Replace(',', '%2C') }   # also : and , in file=
+          $whole = Invoke-Guard $env:OUTPUT_DIR
+          $summary = [Collections.Generic.List[string]]::new()
+          $summary.Add('### Markers'); $summary.Add('')
+          if ($whole.Stopped -and $whole.Stopped -notlike 'Not ready for production*') {
+            Write-Output "::error::The production guard failed, so the markers were not checked: $(& $clean $whole.Stopped)"
+            exit 1
+          } elseif (-not $whole.Stopped) {
+            if (-not ($whole.Out -match '^Production check: ')) {
+              Write-Output '::error::The production guard printed nothing, so it is not known whether the markers were checked.'
+              exit 1
+            }
+            $whole.Out | ForEach-Object { Write-Output $_ }
+            $summary.Add('Nothing the production guard would stop on.')
+          } else {
+            # The guard names at most 25 lines, so run it again on one page at a time to list every one.
+            $root = (Resolve-Path $env:OUTPUT_DIR).Path
+            $one = Join-Path $env:RUNNER_TEMP 'markers-page'
+            $found = [Collections.Generic.List[object]]::new()
+            foreach ($f in Get-ChildItem $root -Recurse -File -Include '*.html', '*.php' | Sort-Object FullName) {
+              $page = [IO.Path]::GetRelativePath($root, $f.FullName).Replace('\', '/')
+              Remove-Item $one -Recurse -Force -ErrorAction SilentlyContinue
+              New-Item -ItemType Directory $one | Out-Null
+              Copy-Item $f.FullName (Join-Path $one $f.Name)
+              $r = Invoke-Guard $one
+              if ($r.Stopped -and $r.Stopped -notlike 'Not ready for production*') {
+                Write-Output "::error::The production guard failed on $page, so the markers were not checked: $(& $clean $r.Stopped)"
+                exit 1
+              }
+              foreach ($line in $r.Out) {
+                if ($line -match '^\s+[^:]+:(\d+): (.+)$') { $found.Add([pscustomobject]@{ Page = $page; Line = $Matches[1]; Marks = $Matches[2] }) }
+                elseif ($line -match '^\s+\.\.\. and (\d+) more lines$') { $found.Add([pscustomobject]@{ Page = $page; Line = ''; Marks = "... and $($Matches[1]) more lines" }) }
+              }
+            }
+            if ($found.Count -eq 0) {
+              Write-Output '::error::The guard stopped on the whole site but found nothing page by page, so the list is not complete.'
+              exit 1
+            }
+            $pages = @($found | Select-Object -ExpandProperty Page -Unique).Count
+            Write-Output "$($found.Count) lines on $pages pages still have notes or placeholders the production guard stops on. A warning only: the production build stops on these."
+            $i = 0
+            foreach ($m in $found) {
+              $i++
+              $at = if ($m.Line) { ",line=$($m.Line)" } else { '' }
+              if ($i -le 50) { Write-Output "::warning file=$(& $prop "$($env:OUTPUT_DIR)/$($m.Page)")$at::Still to fill in: $(& $clean $m.Marks)" }
+              else { Write-Output "  $($m.Page):$($m.Line): $($m.Marks)" }
+            }
+            $summary.Add("$($found.Count) lines on $pages pages still to fill in. A warning only here: the production build stops on these before anything is published.")
+            $summary.Add('')
+            $summary.Add('| Marker | Lines |'); $summary.Add('|---|---|')
+            $found | Where-Object Line | ForEach-Object { $_.Marks -split ', ' } | Group-Object | Sort-Object Count -Descending |
+              ForEach-Object { $summary.Add("| ``$($_.Name.Replace('|', '\|').Replace('`', "'"))`` | $($_.Count) |") }
+            $summary.Add(''); $summary.Add('```')
+            $found | Select-Object -First 500 | ForEach-Object { $summary.Add("$($_.Page):$($_.Line): $($_.Marks)".Replace('```', "'''")) }
+            if ($found.Count -gt 500) { $summary.Add("... and $($found.Count - 500) more lines (all of them are in the log)") }
+            $summary.Add('```')
+          }
+          $summary.Add('')
+          Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value $summary -Encoding utf8
